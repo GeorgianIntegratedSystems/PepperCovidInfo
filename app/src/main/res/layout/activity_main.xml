@@ -31,6 +31,13 @@
             android:layout_gravity="top"
             app:srcCompat="@drawable/sbrlogo" />
 
+            <androidx.appcompat.widget.AppCompatTextView
+                android:id="@+id/distance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="awdawd"
+                android:textSize="20sp"/>
+
             <include
                 android:id="@+id/big_card"
                 layout="@layout/face_layout_big"

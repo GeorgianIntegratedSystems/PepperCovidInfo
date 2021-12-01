@@ -7,6 +7,17 @@ proposal: %GREETING_MASK
         "I like the way you smile behind your mask"
     ]
 
+proposal: %TOO_CLOSE
+    ^rand[
+        "You are too close, please move out"
+        "Please move out"
+    ]
+
+proposal: %MOVED_OUT
+    ^rand[
+        "thanks for moveing out"
+    ]
+
 proposal: %GREETING_NO_MASK
     ^rand[
         "Don't forget to wear a mask"

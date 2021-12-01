@@ -2,6 +2,7 @@ package com.softbankrobotics.peppermaskdetection
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -10,6 +11,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import com.aldebaran.qi.Future
 import com.aldebaran.qi.sdk.QiContext
 import com.aldebaran.qi.sdk.QiSDK
@@ -26,6 +28,7 @@ import com.aldebaran.qi.sdk.conversationalcontentlibrary.greetings.GreetingsConv
 import com.aldebaran.qi.sdk.conversationalcontentlibrary.robotabilities.RobotAbilitiesConversationalContent
 import com.aldebaran.qi.sdk.conversationalcontentlibrary.volumecontrol.VolumeControlConversationalContent
 import com.aldebaran.qi.sdk.design.activity.RobotActivity
+import com.aldebaran.qi.sdk.design.activity.conversationstatus.SpeechBarDisplayStrategy
 import com.softbankrobotics.facemaskdetection.FaceMaskDetection
 import com.softbankrobotics.facemaskdetection.capturer.BottomCameraCapturer
 import com.softbankrobotics.facemaskdetection.capturer.TopCameraCapturer
@@ -33,7 +36,10 @@ import com.softbankrobotics.facemaskdetection.detector.AizooFaceMaskDetector
 import com.softbankrobotics.facemaskdetection.detector.FaceMaskDetector
 import com.softbankrobotics.facemaskdetection.utils.OpenCVUtils
 import com.softbankrobotics.facemaskdetection.utils.TAG
+import com.softbankrobotics.peppermaskdetection.databinding.ActivityMainBinding
 import kotlinx.android.synthetic.main.activity_main.*
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 class MainActivity : RobotActivity(), RobotLifecycleCallbacks {
 
@@ -41,11 +47,15 @@ class MainActivity : RobotActivity(), RobotLifecycleCallbacks {
     private var chatFuture: Future<Void>? = null
     private val useTopCamera = true
     private var shouldBeRecognizing = false
+    private var humanDistanceTracker: HumanDistanceTracker? = null
+    private var humanIsTooClose = false
+    private lateinit var binding: ActivityMainBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        //setSpeechBarDisplayStrategy(SpeechBarDisplayStrategy.IMMERSIVE)
-        setContentView(R.layout.activity_main)
+        setSpeechBarDisplayStrategy(SpeechBarDisplayStrategy.IMMERSIVE)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
         clearFaces()
         if (useTopCamera || cameraPermissionAlreadyGranted()) {
             // No need to request permission
@@ -53,6 +63,49 @@ class MainActivity : RobotActivity(), RobotLifecycleCallbacks {
         } else {
             // First launch, needs to ask permission
             requestPermissionForCamera()
+        }
+    }
+
+    private fun onHumanToCloseChanged(isTooClose: Boolean) {
+        humanIsTooClose = isTooClose
+            if (isTooClose) {
+//                stopMessageLoop()
+//                sayTooClose.async().run()
+                Log.d("awdawd", "you are too close")
+                jumpToBookmark(tooCloseHuman)
+
+            } else {
+                jumpToBookmark(humanMovedOut)
+                Log.d("awdawd", "you are good boy")
+//                startMessageLoop()
+            }
+    }
+
+    private fun onNearestDistanceChanged(distance: Double) {
+        // Debug
+        onNearestDistanceChangedd(distance)
+    }
+
+    fun onNearestDistanceChangedd(distance: Double) {
+        runOnUiThread {
+                val clampedDistance = min(distance, 2.0)
+                // round to the nearest 5:
+                val roundedCentimeters = (clampedDistance * 20.0).roundToInt() * 5
+                val meters = roundedCentimeters / 100
+                val centimeters = roundedCentimeters - (100 * meters)
+                val paddedCm = "$centimeters".padStart(2, '0')
+                binding.distance.text = "${meters}m${paddedCm}"
+                val color = if (distance >= 0.975) {
+                    // Good distance: blue
+//                    binding.distanceCheck.visibility = View.VISIBLE
+                    Color.parseColor("#000090")
+                } else {
+                    // bad distance: red
+//                    binding.distanceCheck.visibility = View.INVISIBLE
+                    Color.parseColor("#e0000f")
+                }
+                binding.distance.setTextColor(color)
+
         }
     }
 
@@ -75,6 +128,7 @@ class MainActivity : RobotActivity(), RobotLifecycleCallbacks {
     override fun onDestroy() {
         super.onDestroy()
         detectionFuture?.requestCancellation()
+        humanDistanceTracker?.stop()
         QiSDK.unregister(this)
     }
 
@@ -345,9 +399,17 @@ class MainActivity : RobotActivity(), RobotLifecycleCallbacks {
     var putOnMaskBookmark: Bookmark? = null
     var newWithoutMaskBookmark: Bookmark? = null
     var manyPeopleBookmark: Bookmark? = null
+    var tooCloseHuman: Bookmark? = null
+    var humanMovedOut: Bookmark? = null
 
     override fun onRobotFocusGained(qiContext: QiContext) {
         Log.i(TAG, "onRobotFocusGained")
+        humanDistanceTracker = HumanDistanceTracker(
+            qiContext,
+            this::onHumanToCloseChanged,
+            this::onNearestDistanceChanged
+        )
+        humanDistanceTracker?.start()
         if (chat == null) {
             val topic = TopicBuilder.with(qiContext).withResource(R.raw.chat).build()
             val qiChatbot = QiChatbotBuilder.with(qiContext).withTopic(topic).build()
@@ -358,6 +420,8 @@ class MainActivity : RobotActivity(), RobotLifecycleCallbacks {
             putOnMaskBookmark = topic.bookmarks["PUT_ON_MASK"]
             newWithoutMaskBookmark = topic.bookmarks["NEW_WITHOUT_MASK"]
             manyPeopleBookmark = topic.bookmarks["MANY_PEOPLE"]
+            tooCloseHuman = topic.bookmarks["TOO_CLOSE"]
+            humanMovedOut = topic.bookmarks["MOVED_OUT"]
 
             val conversationalContents: List<AbstractConversationalContent> = listOf(
                 GreetingsConversationalContent(),
